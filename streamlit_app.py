@@ -1,17 +1,26 @@
 import streamlit as st
-import pickle
 import numpy as np
-import torch
 from PIL import Image
+import torch
 from torchvision import transforms
+import pickle
 
+# Function to load the model based on the type
 @st.cache(allow_output_mutation=True)
 def load_model():
-    with open('resnet50_0.497.pkl', 'rb') as file:
-        model = pickle.load(file)
-    model.eval()  # Set the model to evaluation mode if it's a PyTorch model
-    return model
+    try:
+        # Try loading as PyTorch model
+        with open('resnet50_0.497.pkl', 'rb') as file:
+            model = torch.load(file)
+        model.eval()  # Set to evaluation mode if it's a PyTorch model
+        return model
+    except AttributeError:
+        # If loading as PyTorch model fails, try loading as a scikit-learn model
+        with open('resnet50_0.497.pkl', 'rb') as file:
+            model = pickle.load(file)
+        return model
 
+# Function to preprocess the image
 def preprocess_image(image):
     transform = transforms.Compose([
         transforms.Resize((224, 224)),
@@ -22,13 +31,22 @@ def preprocess_image(image):
     image = image.unsqueeze(0)  # Add batch dimension
     return image
 
+# Function to predict using the model
 def predict(image, model):
-    with torch.no_grad():
-        output = model(image)
-    probabilities = torch.nn.functional.softmax(output[0], dim=0)
-    return probabilities
+    try:
+        # Try prediction as a PyTorch model
+        with torch.no_grad():
+            output = model(image)
+        probabilities = torch.nn.functional.softmax(output[0], dim=0)
+        return probabilities
+    except AttributeError:
+        # If prediction fails, assume it's a scikit-learn model
+        image = image.numpy().flatten().reshape(1, -1)  # Adjust if necessary
+        predictions = model.predict(image)
+        return predictions
 
-st.title("Pest Detection using ResNet50")
+# Streamlit App Interface
+st.title("Pest Detection")
 
 uploaded_file = st.file_uploader("Upload an Image of a Pest", type=["jpg", "jpeg", "png"])
 
@@ -41,5 +59,4 @@ if uploaded_file is not None:
     predictions = predict(processed_image, model)
 
     st.subheader("Prediction Results")
-    for idx, probability in enumerate(predictions):
-        st.write(f"Class {idx}: {probability.item():.4f}")
+    st.write(predictions)
