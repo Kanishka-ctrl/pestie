@@ -1,39 +1,49 @@
 import streamlit as st
-import tensorflow as tf
-from tensorflow.keras.applications import MobileNetV2
-from tensorflow.keras.applications.mobilenet_v2 import preprocess_input, decode_predictions
-from PIL import Image
 import numpy as np
+import pickle
+from PIL import Image
+import torch
+from torchvision import models, transforms
 
+# Load the trained ResNet50 model
 @st.cache(allow_output_mutation=True)
-def load_pretrained_model():
-    model = MobileNetV2(weights='imagenet')
+def load_model():
+    with open('resnet50_0.497.pkl', 'rb') as file:
+        model = pickle.load(file)
+    model.eval()  # Set the model to evaluation mode
     return model
 
-def preprocess_image(image, target_size=(224, 224)):
-    image = image.resize(target_size)
-    image = np.array(image)
-    image = preprocess_input(image)
-    image = np.expand_dims(image, axis=0)  # Add batch dimension
+# Preprocess the image
+def preprocess_image(image):
+    transform = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ])
+    image = transform(image)
+    image = image.unsqueeze(0)  # Add batch dimension
     return image
 
-def predict_image(image, model):
-    processed_image = preprocess_image(image)
-    predictions = model.predict(processed_image)
-    return decode_predictions(predictions, top=3)
+# Perform prediction
+def predict(image, model):
+    with torch.no_grad():
+        output = model(image)
+    probabilities = torch.nn.functional.softmax(output[0], dim=0)
+    return probabilities
 
 # Streamlit app interface
-st.title("Pest Classification using MobileNetV2")
+st.title("Pest Detection using ResNet50")
 
-uploaded_file = st.file_uploader("Upload an Image", type=["jpg", "jpeg", "png"])
+uploaded_file = st.file_uploader("Upload an Image of a Pest", type=["jpg", "jpeg", "png"])
 
 if uploaded_file is not None:
     image = Image.open(uploaded_file)
     st.image(image, caption="Uploaded Image", use_column_width=True)
 
-    model = load_pretrained_model()
-    predictions = predict_image(image, model)
+    model = load_model()
+    processed_image = preprocess_image(image)
+    predictions = predict(processed_image, model)
 
-    st.subheader("Predictions")
-    for i, (imagenet_id, label, score) in enumerate(predictions[0]):
-        st.write(f"{i+1}: {label} ({score:.4f})")
+    st.subheader("Prediction Results")
+    for idx, probability in enumerate(predictions):
+        st.write(f"Class {idx}: {probability.item():.4f}")
